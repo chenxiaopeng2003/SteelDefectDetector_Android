@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 最简单的主题，避免依赖问题 -->
+    <style name="Theme.SteelDefectDetector" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- 使用系统默认颜色 -->
+        <item name="android:colorPrimary">#2196F3</item>
+        <item name="android:colorPrimaryDark">#1976D2</item>
+        <item name="android:colorAccent">#FF9800</item>
+    </style>
+</resources>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">钢材缺陷检测</string>
+    
+    <!-- 主界面文本 -->
+    <string name="app_title">钢材缺陷检测应用</string>
+    <string name="select_image_hint">请选择一张钢材图片进行检测</string>
+    <string name="select_image_button">选择钢材图片</string>
+    <string name="detect_defects_button">开始检测缺陷</string>
+    <string name="detect_defects_button_enabled">检测缺陷 (点击开始)</string>
+    
+    <!-- 状态消息 -->
+    <string name="no_image_selected">请先选择图片</string>
+    <string name="image_selected">已选择图片: %1$d×%2$d 像素</string>
+    <string name="detection_started">开始检测缺陷...</string>
+    
+    <!-- 权限相关 -->
+    <string name="permission_required">需要相册权限才能选择图片</string>
+    <string name="permission_granted">权限已授予</string>
+    
+    <!-- 操作结果 -->
+    <string name="image_load_success">图片加载成功</string>
+    <string name="image_load_failed">图片加载失败: %s</string>
+    <string name="no_image_selected_toast">未选择图片</string>
+</resources>
