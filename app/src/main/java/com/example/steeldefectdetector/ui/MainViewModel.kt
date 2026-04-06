@@ -234,10 +234,8 @@ class MainViewModel : ViewModel() {
                     )
                 }
 
-                // 4. 保存检测结果到数据库
-                if (results.isNotEmpty()) {
-                    saveDetectionToDatabase()
-                }
+                // 4. 保存检测结果到数据库（无论是否有缺陷都保存）
+                saveDetectionToDatabase(inferenceTime, results)
 
             } catch (e: Exception) {
                 Log.e("MainViewModel", "检测失败", e)
@@ -354,45 +352,82 @@ class MainViewModel : ViewModel() {
         // 简化版本，暂时不实现
     }
 
-    suspend fun saveDetectionToDatabase() {
+    /**
+     * 保存检测结果到数据库
+     * @param inferenceTime 推理耗时
+     * @param results 检测结果列表（可能为空，表示无缺陷）
+     */
+    suspend fun saveDetectionToDatabase(inferenceTime: Long, results: List<DetectionResult>) {
+        val state = _uiState.value
+        val bitmap = state.selectedImage ?: return
+        val modelName = state.selectedModel ?: "Unknown"
+        val comparisonData = state.comparisonData ?: ""
+
         _uiState.update { it.copy(isSaving = true) }
 
         try {
             withContext(Dispatchers.IO) {
-                // 模拟保存
-                kotlinx.coroutines.delay(1000)
-                true
+                val dbHelper = DetectionDatabaseHelper(context!!)
+                val db = dbHelper.writableDatabase
+
+                // 将检测结果转换为JSON格式保存
+                val resultsJson = convertResultsToJson(results)
+                
+                // 构建备注信息：如果有缺陷显示详情，无缺陷显示提示
+                val note = if (results.isEmpty()) {
+                    "✅ 未检测到缺陷\n\n该图片经模型检测，未发现钢材表面缺陷。"
+                } else {
+                    comparisonData
+                }
+
+                val values = android.content.ContentValues().apply {
+                    put(DetectionDatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
+                    put(DetectionDatabaseHelper.COLUMN_MODEL_USED, modelName)
+                    put(DetectionDatabaseHelper.COLUMN_IMAGE_PATH, "internal_storage")
+                    put(DetectionDatabaseHelper.COLUMN_RESULTS_JSON, resultsJson)
+                    put(DetectionDatabaseHelper.COLUMN_INFERENCE_TIME, inferenceTime)
+                    put(DetectionDatabaseHelper.COLUMN_NOTE, note)
+                }
+
+                val newRowId = db.insert(DetectionDatabaseHelper.TABLE_DETECTIONS, null, values)
+                newRowId != -1L
             }.let { success ->
                 if (success) {
-                    _uiState.update {
-                        it.copy(
-                            isSaving = false,
-                            showSaveSuccess = true
-                        )
-                    }
+                    _uiState.update { it.copy(isSaving = false, showSaveSuccess = true) }
+                    loadHistory() // 保存后立即刷新列表
 
-                    // 3秒后隐藏成功提示
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(3000)
                         _uiState.update { it.copy(showSaveSuccess = false) }
                     }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isSaving = false,
-                            error = "保存失败"
-                        )
-                    }
                 }
             }
         } catch (e: Exception) {
-            _uiState.update {
-                it.copy(
-                    isSaving = false,
-                    error = "保存失败: ${e.message}"
-                )
-            }
+            Log.e("MainViewModel", "保存失败", e)
+            _uiState.update { it.copy(isSaving = false, error = "保存至数据库失败: ${e.message}") }
         }
+    }
+
+    /**
+     * 将检测结果列表转换为JSON字符串
+     */
+    private fun convertResultsToJson(results: List<DetectionResult>): String {
+        if (results.isEmpty()) return "[]"
+        
+        val jsonArray = org.json.JSONArray()
+        results.forEach { result ->
+            val jsonObject = org.json.JSONObject().apply {
+                put("className", result.className)
+                put("confidence", result.confidence)
+                put("x1", result.x1)
+                put("y1", result.y1)
+                put("x2", result.x2)
+                put("y2", result.y2)
+                put("description", result.description)
+            }
+            jsonArray.put(jsonObject)
+        }
+        return jsonArray.toString()
     }
 
     fun initializeDatabase(context: Context) {
@@ -474,7 +509,7 @@ class MainViewModel : ViewModel() {
 
                 val deletedRows = db.delete(
                     DetectionDatabaseHelper.TABLE_DETECTIONS,
-                    "${DetectionDatabaseHelper.COLUMN_ID} = ?",
+                    "${DetectionDatabaseHelper.COLUMN_ID} = ?", // 确保这里是 COLUMN_ID
                     arrayOf(id.toString())
                 )
 

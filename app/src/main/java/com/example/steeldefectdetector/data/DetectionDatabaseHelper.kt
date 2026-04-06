@@ -142,7 +142,7 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     imageHeight = 0,
                     defectCount = defectCount,
                     inferenceTime = inferenceTime,
-                    comparisonData = "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms"
+                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms"
                 )
                 
                 historyList.add(history)
@@ -175,6 +175,7 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                 val resultsJson = it.getString(it.getColumnIndexOrThrow(COLUMN_RESULTS_JSON))
                 val inferenceTime = it.getLong(it.getColumnIndexOrThrow(COLUMN_INFERENCE_TIME))
                 val timestamp = it.getLong(it.getColumnIndexOrThrow(COLUMN_TIMESTAMP))
+                val note = it.getString(it.getColumnIndexOrThrow(COLUMN_NOTE))
                 
                 // 解析结果JSON获取缺陷数量
                 val results = parseResultsFromJson(resultsJson)
@@ -189,7 +190,7 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     imageHeight = 0,
                     defectCount = defectCount,
                     inferenceTime = inferenceTime,
-                    comparisonData = "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms\n\n详细结果:\n${results.joinToString("\n") { "- ${it.className}: ${it.confidence}%" }}"
+                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms\n\n详细结果:\n${results.joinToString("\n") { "- ${it.className}: ${it.confidence}%" }}"
                 )
             }
         }

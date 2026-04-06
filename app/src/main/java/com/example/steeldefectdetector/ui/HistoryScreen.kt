@@ -99,9 +99,14 @@ fun HistoryScreen(
                     items(uiState.historyList) { history ->
                         HistoryItem(
                             history = history,
-                            onViewDetails = { onViewDetails(history) },
+                            onViewDetails = {
+                                // 1. 设置当前选中的历史记录
+                                viewModel.selectHistory(history)
+                                // 2. 如果有专门的详情页导航，也可以调用 onViewDetails(history)
+                            },
                             onDelete = { viewModel.deleteHistory(history.id) }
                         )
+
                     }
                 }
             }
@@ -154,7 +159,7 @@ fun HistoryItem(
                     }
                 ) {
                     Text(
-                        text = "${history.defectCount}个缺陷",
+                        text = if (history.defectCount > 0) "${history.defectCount}个缺陷" else "✅ 无缺陷",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,

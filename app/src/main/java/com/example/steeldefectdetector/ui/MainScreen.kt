@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -113,19 +114,23 @@ fun MainScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(52.dp) // 1. 固定高度，确保两个按钮视觉高度绝对一致
                 .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 模型选择下拉菜单（占主要空间）
+            // 模型选择下拉菜单
             var expanded by remember { mutableStateOf(false) }
             Box(
-                modifier = Modifier.weight(3f) // 占3份权重
+                modifier = Modifier
+                    .weight(2f) // 2. 减小权重（原为3f），使按钮变窄
+                    .fillMaxHeight()
             ) {
                 OutlinedButton(
                     onClick = { expanded = true },
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxSize(), // 填充父容器高度
+                    contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
                     Text(
                         text = if (uiState.selectedModel.isNullOrEmpty()) {
@@ -138,7 +143,8 @@ fun MainScreen(
                         } else {
                             MaterialTheme.colorScheme.onSurface
                         },
-                        maxLines = 1
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false) // 文字不挤占图标空间
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
@@ -147,7 +153,7 @@ fun MainScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                
+
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
@@ -156,9 +162,7 @@ fun MainScreen(
                     if (uiState.availableModels.isEmpty()) {
                         DropdownMenuItem(
                             text = { Text("无可用模型", maxLines = 1) },
-                            onClick = {
-                                expanded = false
-                            },
+                            onClick = { expanded = false },
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
@@ -175,25 +179,31 @@ fun MainScreen(
                     }
                 }
             }
-            
+
             // 历史记录按钮
             OutlinedButton(
                 onClick = onNavigateToHistory,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp)
+                modifier = Modifier
+                    .weight(1f) // 保持 1 份权重
+                    .fillMaxHeight(), // 3. 强制填充高度
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp) // 4. 减小内边距，防止文字溢出
             ) {
                 Icon(
                     imageVector = Icons.Default.History,
                     contentDescription = "历史记录",
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("历史")
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "历史",
+                    maxLines = 1
+                )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // 图片预览区域
         Card(
             modifier = Modifier
@@ -323,7 +333,7 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // 检测结果
-        if (uiState.detectionResults.isNotEmpty()) {
+        if (uiState.detectionResults.isNotEmpty() || uiState.comparisonData != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -344,13 +354,18 @@ fun MainScreen(
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
-                    // 检测结果列表
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        uiState.detectionResults.forEach { result ->
-                            DetectionResultItem(result = result)
+                    // 检测结果列表（如果有缺陷）或无缺陷提示
+                    if (uiState.detectionResults.isNotEmpty()) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            uiState.detectionResults.forEach { result ->
+                                DetectionResultItem(result = result)
+                            }
                         }
+                    } else {
+                        // 无缺陷提示
+                        NoDefectResultItem()
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -473,6 +488,49 @@ fun MainScreen(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
+        }
+    }
+}
+
+/**
+ * 无缺陷结果项
+ */
+@Composable
+fun NoDefectResultItem() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "无缺陷",
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            
+            Text(
+                text = "✅ 未检测到缺陷",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            
+            Text(
+                text = "该图片经模型检测，未发现钢材表面缺陷",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
