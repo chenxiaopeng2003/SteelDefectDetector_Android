@@ -34,12 +34,14 @@ data class DetectionResult(
     
     /**
      * 获取缺陷严重程度
+     * 根据缺陷类型判断，而不是置信度
+     * 冲孔和月牙弯最严重，水斑油斑最轻微
      */
     fun getSeverity(): String {
-        return when {
-            confidence >= 0.9 -> "严重"
-            confidence >= 0.7 -> "中等"
-            else -> "轻微"
+        return when (className) {
+            "chongkong", "yueyawan" -> "严重"  // 冲孔和月牙弯最严重
+            "shuiban", "youban" -> "轻微"      // 水斑油斑最轻微
+            else -> "中等"                     // 其他缺陷中等严重程度
         }
     }
     

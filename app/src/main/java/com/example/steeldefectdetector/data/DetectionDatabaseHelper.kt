@@ -124,10 +124,12 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                 val imagePath = it.getString(it.getColumnIndexOrThrow(COLUMN_IMAGE_PATH))
                 val modelUsed = it.getString(it.getColumnIndexOrThrow(COLUMN_MODEL_USED))
                 val resultsJson = it.getString(it.getColumnIndexOrThrow(COLUMN_RESULTS_JSON))
-                val inferenceTime = it.getLong(it.getColumnIndexOrThrow(COLUMN_INFERENCE_TIME))
+
                 val timestamp = it.getLong(it.getColumnIndexOrThrow(COLUMN_TIMESTAMP))
                 val note = it.getString(it.getColumnIndexOrThrow(COLUMN_NOTE))
-                
+                // 在 while (it.moveToNext()) 循环内
+                val inferenceTimeIdx = it.getColumnIndex(COLUMN_INFERENCE_TIME)
+                val inferenceTime = if (inferenceTimeIdx != -1) it.getLong(inferenceTimeIdx) else 0L
                 // 解析结果JSON获取缺陷数量
                 val results = parseResultsFromJson(resultsJson)
                 val defectCount = results.size

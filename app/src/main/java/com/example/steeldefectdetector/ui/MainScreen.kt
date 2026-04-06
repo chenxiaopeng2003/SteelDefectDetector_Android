@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.steeldefectdetector.model.DetectionResult
+import com.example.steeldefectdetector.model.DetectionHistory
 import com.example.steeldefectdetector.ui.components.BoundingBoxOverlay
 import java.io.File
 
@@ -45,6 +46,14 @@ fun MainScreen(
     // 初始化ViewModel的Context
     LaunchedEffect(Unit) {
         viewModel.setContext(context)
+    }
+    
+    // 显示历史记录详情对话框
+    if (uiState.selectedHistory != null) {
+        HistoryDetailDialog(
+            history = uiState.selectedHistory,
+            onDismiss = { viewModel.selectHistory(null) }
+        )
     }
     
     // 从相册选择图片
@@ -114,7 +123,7 @@ fun MainScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp) // 1. 固定高度，确保两个按钮视觉高度绝对一致
+                .height(52.dp)
                 .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -123,13 +132,13 @@ fun MainScreen(
             var expanded by remember { mutableStateOf(false) }
             Box(
                 modifier = Modifier
-                    .weight(2f) // 2. 减小权重（原为3f），使按钮变窄
+                    .weight(2f)
                     .fillMaxHeight()
             ) {
                 OutlinedButton(
                     onClick = { expanded = true },
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxSize(), // 填充父容器高度
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
                     Text(
@@ -144,7 +153,7 @@ fun MainScreen(
                             MaterialTheme.colorScheme.onSurface
                         },
                         maxLines = 1,
-                        modifier = Modifier.weight(1f, fill = false) // 文字不挤占图标空间
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
@@ -184,10 +193,10 @@ fun MainScreen(
             OutlinedButton(
                 onClick = onNavigateToHistory,
                 modifier = Modifier
-                    .weight(1f) // 保持 1 份权重
-                    .fillMaxHeight(), // 3. 强制填充高度
+                    .weight(1f)
+                    .fillMaxHeight(),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp) // 4. 减小内边距，防止文字溢出
+                contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.History,
@@ -617,3 +626,4 @@ fun DetectionResultItem(result: DetectionResult) {
         }
     }
 }
+

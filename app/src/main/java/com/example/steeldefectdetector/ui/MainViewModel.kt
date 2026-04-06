@@ -145,7 +145,13 @@ class MainViewModel : ViewModel() {
     }
 
     fun onImageSelected(bitmap: Bitmap) {
-        _uiState.update { it.copy(selectedImage = bitmap, detectionResults = emptyList(), error = null) }
+        _uiState.update { it.copy(
+            selectedImage = bitmap, 
+            detectionResults = emptyList(), 
+            comparisonData = null,  // 清空之前的检测数据
+            showComparison = false, // 隐藏对比数据
+            error = null
+        ) }
     }
 
     fun loadImageFromUri(context: Context, uri: Uri) {
@@ -159,7 +165,13 @@ class MainViewModel : ViewModel() {
                 }
 
                 bitmap?.let {
-                    _uiState.update { it.copy(selectedImage = bitmap, detectionResults = emptyList(), error = null) }
+                    _uiState.update { it.copy(
+                        selectedImage = bitmap, 
+                        detectionResults = emptyList(), 
+                        comparisonData = null,  // 清空之前的检测数据
+                        showComparison = false, // 隐藏对比数据
+                        error = null
+                    ) }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "图片加载失败: ${e.message}") }
@@ -359,42 +371,29 @@ class MainViewModel : ViewModel() {
      */
     suspend fun saveDetectionToDatabase(inferenceTime: Long, results: List<DetectionResult>) {
         val state = _uiState.value
-        val bitmap = state.selectedImage ?: return
         val modelName = state.selectedModel ?: "Unknown"
-        val comparisonData = state.comparisonData ?: ""
+        // 这里建议陈晓鹏：如果 imagePath 暂时没存本地文件，可以存个标识，或者 bitmap 的特征值
+        val imagePath = "internal_storage_${System.currentTimeMillis()}"
 
         _uiState.update { it.copy(isSaving = true) }
 
         try {
             withContext(Dispatchers.IO) {
                 val dbHelper = DetectionDatabaseHelper(context!!)
-                val db = dbHelper.writableDatabase
 
-                // 将检测结果转换为JSON格式保存
-                val resultsJson = convertResultsToJson(results)
-                
-                // 构建备注信息：如果有缺陷显示详情，无缺陷显示提示
-                val note = if (results.isEmpty()) {
-                    "✅ 未检测到缺陷\n\n该图片经模型检测，未发现钢材表面缺陷。"
-                } else {
-                    comparisonData
-                }
-
-                val values = android.content.ContentValues().apply {
-                    put(DetectionDatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
-                    put(DetectionDatabaseHelper.COLUMN_MODEL_USED, modelName)
-                    put(DetectionDatabaseHelper.COLUMN_IMAGE_PATH, "internal_storage")
-                    put(DetectionDatabaseHelper.COLUMN_RESULTS_JSON, resultsJson)
-                    put(DetectionDatabaseHelper.COLUMN_INFERENCE_TIME, inferenceTime)
-                    put(DetectionDatabaseHelper.COLUMN_NOTE, note)
-                }
-
-                val newRowId = db.insert(DetectionDatabaseHelper.TABLE_DETECTIONS, null, values)
+                // 直接调用封装好的方法，不要手动写 db.insert
+                val newRowId = dbHelper.saveDetection(
+                    imagePath = imagePath,
+                    modelUsed = modelName,
+                    results = results,
+                    inferenceTime = inferenceTime,
+                    note = state.comparisonData // 直接存入生成的详细报告
+                )
                 newRowId != -1L
             }.let { success ->
                 if (success) {
                     _uiState.update { it.copy(isSaving = false, showSaveSuccess = true) }
-                    loadHistory() // 保存后立即刷新列表
+                    loadHistory() // 刷新列表
 
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(3000)
@@ -404,7 +403,7 @@ class MainViewModel : ViewModel() {
             }
         } catch (e: Exception) {
             Log.e("MainViewModel", "保存失败", e)
-            _uiState.update { it.copy(isSaving = false, error = "保存至数据库失败: ${e.message}") }
+            _uiState.update { it.copy(isSaving = false, error = "保存失败: ${e.message}") }
         }
     }
 
@@ -469,7 +468,13 @@ class MainViewModel : ViewModel() {
                 }
 
                 bitmap?.let {
-                    _uiState.update { it.copy(selectedImage = bitmap, detectionResults = emptyList(), error = null) }
+                    _uiState.update { it.copy(
+                        selectedImage = bitmap, 
+                        detectionResults = emptyList(), 
+                        comparisonData = null,  // 清空之前的检测数据
+                        showComparison = false, // 隐藏对比数据
+                        error = null
+                    ) }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "图片文件加载失败: ${e.message}") }
@@ -485,7 +490,7 @@ class MainViewModel : ViewModel() {
             try {
                 val dbHelper = DetectionDatabaseHelper(context!!)
                 val historyList = dbHelper.getAllDetectionHistory()
-
+                Log.d("MainViewModel", "成功读取历史记录：${historyList.size} 条") // 加这行
                 _uiState.update {
                     it.copy(historyList = historyList)
                 }
