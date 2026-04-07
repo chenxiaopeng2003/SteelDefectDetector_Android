@@ -32,7 +32,9 @@ import com.example.steeldefectdetector.model.DetectionResult
 import com.example.steeldefectdetector.model.DetectionHistory
 import com.example.steeldefectdetector.ui.components.BoundingBoxOverlay
 import java.io.File
-
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -75,19 +77,17 @@ fun MainScreen(
             null
         }
     }
-    
+
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && photoFile != null) {
-            // 拍照成功，加载图片
             viewModel.loadImageFromFile(context, photoFile)
         } else {
             viewModel.showMessage("拍照失败")
         }
     }
-    
-    // 创建FileProvider URI
+
     val photoUri = remember(photoFile) {
         photoFile?.let { file ->
             androidx.core.content.FileProvider.getUriForFile(
@@ -97,6 +97,24 @@ fun MainScreen(
             )
         }
     }
+
+    // 4. ================= 新增：相机权限请求 Launcher =================
+    // ⚠️ 请把这段代码放在 photoUri 的下方！
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            // 用户同意授权后，直接启动相机
+            photoUri?.let { uri ->
+                cameraLauncher.launch(uri)
+            }
+        } else {
+            // 用户拒绝授权
+            viewModel.showMessage("需要相机权限才能使用拍照功能")
+        }
+    }
+    // ==============================================================
+
     
     Column(
         modifier = Modifier
@@ -271,13 +289,25 @@ fun MainScreen(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 拍照按钮
+            // 拍照按钮
             OutlinedButton(
                 onClick = {
-                    // 启动相机拍照
-                    photoUri?.let { uri ->
-                        cameraLauncher.launch(uri)
-                    } ?: run {
-                        viewModel.showMessage("无法创建临时文件")
+                    // 1. 检查是否已经拥有相机权限
+                    val hasPermission = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.CAMERA
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (hasPermission) {
+                        // 2. 如果已经有权限，直接启动相机
+                        photoUri?.let { uri ->
+                            cameraLauncher.launch(uri)
+                        } ?: run {
+                            viewModel.showMessage("无法创建临时文件")
+                        }
+                    } else {
+                        // 3. 如果没有权限，发起动态权限请求
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 },
                 modifier = Modifier.weight(1f),
