@@ -1,41 +1,41 @@
 package com.example.steeldefectdetector.ui
 
-import android.graphics.Bitmap
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.steeldefectdetector.model.DetectionResult
-import com.example.steeldefectdetector.model.DetectionHistory
-import com.example.steeldefectdetector.ui.components.BoundingBoxOverlay
-import java.io.File
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
-@OptIn(ExperimentalMaterial3Api::class)
+import com.example.steeldefectdetector.model.DetectionResult
+import com.example.steeldefectdetector.ui.components.BoundingBoxOverlay
+import kotlinx.coroutines.launch
+import java.io.File
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MainScreen(
     onNavigateToExport: () -> Unit,
@@ -44,556 +44,357 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    
-    // 初始化ViewModel的Context
-    LaunchedEffect(Unit) {
-        viewModel.setContext(context)
-    }
-    
-    // 显示历史记录详情对话框
-    if (uiState.selectedHistory != null) {
-        HistoryDetailDialog(
-            history = uiState.selectedHistory,
-            onDismiss = { viewModel.selectHistory(null) }
-        )
-    }
-    
-    // 从相册选择图片
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            viewModel.loadImageFromUri(context, it)
+
+    // 强制绑定初始页面为 uiState.targetTabIndex，防止页面重建时默认的 0 覆盖掉跨页面传来的 1！
+    val pagerState = rememberPagerState(
+        initialPage = uiState.targetTabIndex,
+        pageCount = { 2 }
+    )
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) { viewModel.setContext(context) }
+
+    // 监听 ViewModel 的全局消息事件，底层报错时弹出 Toast
+    LaunchedEffect(viewModel.messageEvent) {
+        viewModel.messageEvent?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            viewModel.clearMessage()
         }
     }
-    
-    // 相机拍照 - 创建临时文件
+
+    // 监听 ViewModel 目标页面的变化并执行滑动
+    LaunchedEffect(uiState.targetTabIndex) {
+        if (pagerState.currentPage != uiState.targetTabIndex) {
+            pagerState.animateScrollToPage(uiState.targetTabIndex)
+        }
+    }
+
+    // 监听用户的滑动操作，滑动停止后同步给 ViewModel (防止冲突)
+    LaunchedEffect(pagerState.settledPage) {
+        if (uiState.targetTabIndex != pagerState.settledPage) {
+            viewModel.setTargetTab(pagerState.settledPage)
+        }
+    }
+
+    // 【彻底修复】：已将此处残留的 HistoryDetailFullScreen 弹窗代码彻底删除！
+    // 不再会有两个弹窗互相打架吞掉点击事件，历史页面的重新标注现在可以畅通无阻地触发。
+
+    val tabs = listOf("缺陷检测", "数据采集")
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(
+            title = { Text("钢材缺陷检测系统", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+        )
+
+        TabRow(selectedTabIndex = pagerState.currentPage, containerColor = MaterialTheme.colorScheme.surface) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = { viewModel.setTargetTab(index) },
+                    text = { Text(text = title, fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal) }
+                )
+            }
+        }
+
+        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+            when (page) {
+                0 -> DetectionView(viewModel, onNavigateToHistory, onNavigateToExport, context)
+                1 -> DataCollectionView(viewModel, context)
+            }
+        }
+    }
+}
+
+@Composable
+fun DetectionView(
+    viewModel: MainViewModel,
+    onNavigateToHistory: () -> Unit,
+    onNavigateToExport: () -> Unit,
+    context: android.content.Context
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    // ====== 缺陷检测独立组件 ======
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { viewModel.loadImageFromUri(context, it) }
+    }
     val photoFile = remember {
         try {
-            val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
             val storageDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
-            File.createTempFile("JPEG_${timeStamp}_", ".jpg", storageDir)
-        } catch (e: Exception) {
-            null
-        }
+            File.createTempFile("DETECT_${System.currentTimeMillis()}_", ".jpg", storageDir)
+        } catch (e: Exception) { null }
     }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && photoFile != null) {
-            viewModel.loadImageFromFile(context, photoFile)
-        } else {
-            viewModel.showMessage("拍照失败")
-        }
-    }
-
     val photoUri = remember(photoFile) {
-        photoFile?.let { file ->
-            androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-        }
+        photoFile?.let { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it) }
     }
-
-    // 4. ================= 新增：相机权限请求 Launcher =================
-    // ⚠️ 请把这段代码放在 photoUri 的下方！
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            // 用户同意授权后，直接启动相机
-            photoUri?.let { uri ->
-                cameraLauncher.launch(uri)
-            }
-        } else {
-            // 用户拒绝授权
-            viewModel.showMessage("需要相机权限才能使用拍照功能")
-        }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && photoFile != null) viewModel.loadImageFromFile(context, photoFile) else viewModel.showMessage("拍照失败")
     }
-    // ==============================================================
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) photoUri?.let { cameraLauncher.launch(it) } else viewModel.showMessage("需要相机权限")
+    }
+    // ==============================
 
-    
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        // 标题 - 居中显示
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "钢材缺陷检测",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        
-        // 模型选择和历史记录按钮并列
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 模型选择下拉菜单
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 模型选择下拉与历史记录
+        Row(modifier = Modifier.fillMaxWidth().height(56.dp).padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             var expanded by remember { mutableStateOf(false) }
-            Box(
-                modifier = Modifier
-                    .weight(2f)
-                    .fillMaxHeight()
-            ) {
-                OutlinedButton(
-                    onClick = { expanded = true },
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp)
-                ) {
-                    Text(
-                        text = if (uiState.selectedModel.isNullOrEmpty()) {
-                            "选择模型"
-                        } else {
-                            uiState.selectedModel ?: "选择模型"
-                        },
-                        color = if (uiState.selectedModel.isNullOrEmpty()) {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = "模型选择",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+            var dropdownWidth by remember { mutableStateOf(0) }
+            val density = LocalDensity.current
 
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (uiState.availableModels.isEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text("无可用模型", maxLines = 1) },
-                            onClick = { expanded = false },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        uiState.availableModels.forEach { model ->
-                            DropdownMenuItem(
-                                text = { Text(model, maxLines = 1) },
-                                onClick = {
-                                    viewModel.onModelSelected(model)
-                                    expanded = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+            Box(modifier = Modifier.weight(2f).fillMaxHeight().onSizeChanged { dropdownWidth = it.width }) {
+                OutlinedButton(onClick = { expanded = true }, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    Text(text = uiState.selectedModel ?: "选择模型", modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.Menu, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.width(with(density) { dropdownWidth.toDp() })) {
+                    uiState.availableModels.forEach { model ->
+                        DropdownMenuItem(text = { Text(model) }, onClick = { viewModel.onModelSelected(model); expanded = false })
                     }
                 }
             }
 
-            // 历史记录按钮
-            OutlinedButton(
-                onClick = onNavigateToHistory,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.History,
-                    contentDescription = "历史记录",
-                    modifier = Modifier.size(18.dp)
-                )
+            OutlinedButton(onClick = onNavigateToHistory, modifier = Modifier.weight(1f).fillMaxHeight(), shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "历史",
-                    maxLines = 1
-                )
+                Text("历史")
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 图片预览区域
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
+        // 检测结果图片区 (使用 selectedImage)
+        Card(modifier = Modifier.fillMaxWidth().height(300.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 uiState.selectedImage?.let { bitmap ->
                     if (uiState.detectionResults.isNotEmpty()) {
-                        // 显示带边界框的图片
-                        BoundingBoxOverlay(
-                            bitmap = bitmap,
-                            detections = uiState.detectionResults,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        BoundingBoxOverlay(bitmap = bitmap, detections = uiState.detectionResults, modifier = Modifier.fillMaxSize())
                     } else {
-                        // 显示原始图片
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Selected Image",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
+                        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     }
                 } ?: run {
-                    // 没有图片时的占位符
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "No Image",
-                            modifier = Modifier.size(80.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                        Text(
-                            text = "点击下方按钮选择图片",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("请选择图片或拍照", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                     }
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // 图片选择按钮
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // 拍照按钮
-            // 拍照按钮
-            OutlinedButton(
-                onClick = {
-                    // 1. 检查是否已经拥有相机权限
-                    val hasPermission = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.CAMERA
-                    ) == PackageManager.PERMISSION_GRANTED
 
-                    if (hasPermission) {
-                        // 2. 如果已经有权限，直接启动相机
-                        photoUri?.let { uri ->
-                            cameraLauncher.launch(uri)
-                        } ?: run {
-                            viewModel.showMessage("无法创建临时文件")
-                        }
-                    } else {
-                        // 3. 如果没有权限，发起动态权限请求
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                enabled = photoUri != null
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Camera",
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("拍照")
-            }
-            
-            // 相册按钮
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedButton(
-                onClick = {
-                    galleryLauncher.launch("image/*")
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp)
+                onClick = { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) photoUri?.let { cameraLauncher.launch(it) } else permissionLauncher.launch(Manifest.permission.CAMERA) },
+                modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp), enabled = photoUri != null
             ) {
-                Icon(
-                    imageVector = Icons.Default.PhotoLibrary,
-                    contentDescription = "Gallery",
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("选择图片")
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("拍照")
+            }
+            OutlinedButton(
+                onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("选择图片")
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
-        // 检测按钮
+
         Button(
-            onClick = { viewModel.detectDefects() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(12.dp),
-            enabled = uiState.selectedImage != null && !uiState.isDetecting,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
+            onClick = { viewModel.detectDefects() }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), enabled = uiState.selectedImage != null && !uiState.isDetecting
         ) {
             if (uiState.isDetecting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(12.dp))
                 Text("检测中...")
             } else {
                 Text("开始检测")
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
-        // 检测结果
-        if (uiState.detectionResults.isNotEmpty() || uiState.comparisonData != null) {
+
+        uiState.error?.let { errorMsg ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    Text(
-                        text = "检测结果",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    
+                Text(
+                    text = errorMsg,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(16.dp),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // 【确保结果区域能被稳定渲染】
+        if (uiState.detectionResults.isNotEmpty() || uiState.comparisonData != null) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("检测结果", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.height(12.dp))
-                    
-                    // 检测结果列表（如果有缺陷）或无缺陷提示
+
                     if (uiState.detectionResults.isNotEmpty()) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            uiState.detectionResults.forEach { result ->
-                                DetectionResultItem(result = result)
-                            }
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            uiState.detectionResults.forEach { result -> DetectionResultItem(result = result) }
                         }
                     } else {
-                        // 无缺陷提示
                         NoDefectResultItem()
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // 数据对比和导出按钮
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // 显示/隐藏对比数据按钮
-                        OutlinedButton(
-                            onClick = { viewModel.toggleComparisonData() },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.showComparison) {
-                                    Icons.Default.VisibilityOff
-                                } else {
-                                    Icons.Default.Visibility
-                                },
-                                contentDescription = "Toggle Comparison",
-                                modifier = Modifier.size(20.dp)
-                            )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = { viewModel.toggleComparisonData() }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(8.dp)) {
+                            Icon(imageVector = if (uiState.showComparison) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "Toggle", modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(if (uiState.showComparison) "隐藏数据" else "显示数据")
                         }
-                        
-                        // 导出按钮
-                        Button(
-                            onClick = onNavigateToExport,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("导出数据")
-                        }
+                        Button(onClick = onNavigateToExport, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(8.dp)) { Text("导出数据") }
                     }
-                    
-                    // 对比数据
+
                     if (uiState.showComparison && uiState.comparisonData != null) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "检测详情",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    
-                                    IconButton(
-                                        onClick = {
-                                            viewModel.copyComparisonDataToClipboard(context)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = "Copy"
-                                        )
-                                    }
+                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("检测详情", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    IconButton(onClick = {
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("检测数据", uiState.comparisonData)
+                                        clipboard.setPrimaryClip(clip)
+                                        viewModel.showMessage("已复制到剪贴板")
+                                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "Copy") }
                                 }
-                                
                                 Spacer(modifier = Modifier.height(8.dp))
-                                
-                                Text(
-                                    text = uiState.comparisonData!!,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                )
+                                Text(text = uiState.comparisonData!!, fontSize = 14.sp, lineHeight = 20.sp)
                             }
                         }
                     }
                 }
             }
         }
-        
-        // 错误提示
-        uiState.error?.let { error ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text(
-                    text = error,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-        
-        // 保存成功提示
-        if (uiState.showSaveSuccess) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Text(
-                    text = "保存成功！",
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-        }
+        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
-/**
- * 无缺陷结果项
- */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun DataCollectionView(
+    viewModel: MainViewModel,
+    context: android.content.Context
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedClasses by remember { mutableStateOf(setOf<String>()) }
+
+    // ====== 数据采集独立组件 ======
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { viewModel.loadAnnotationImageFromUri(context, it) }
+    }
+    val photoFile = remember {
+        try {
+            val storageDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
+            File.createTempFile("ANNOTATE_${System.currentTimeMillis()}_", ".jpg", storageDir)
+        } catch (e: Exception) { null }
+    }
+    val photoUri = remember(photoFile) {
+        photoFile?.let { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it) }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && photoFile != null) viewModel.loadAnnotationImageFromFile(context, photoFile) else viewModel.showMessage("拍照失败")
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) photoUri?.let { cameraLauncher.launch(it) } else viewModel.showMessage("需要相机权限")
+    }
+    // ==============================
+
+    val defectClasses = listOf("chongkong" to "冲孔", "hanfeng" to "焊缝", "yueyawan" to "月牙弯", "shuiban" to "水斑", "youban" to "油斑", "siban" to "丝斑", "yiwu" to "异物", "yahen" to "压痕", "zhehen" to "折痕", "yaozhe" to "腰折")
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("人工标注模式", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            AssistChip(onClick = { }, label = { Text("待保存") }, leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 标注结果图片区 (使用 annotationImage)
+        Card(modifier = Modifier.fillMaxWidth().height(300.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                uiState.annotationImage?.let { bitmap ->
+                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                } ?: run {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Crop, contentDescription = "Draw Box", modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("请导入图片后进行标注", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(
+                onClick = { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) photoUri?.let { cameraLauncher.launch(it) } else permissionLauncher.launch(Manifest.permission.CAMERA) },
+                modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp), enabled = photoUri != null
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("拍照")
+            }
+            OutlinedButton(
+                onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("选择图片")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("选择缺陷类别 (支持多选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+
+        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            defectClasses.forEach { (enName, cnName) ->
+                val isSelected = selectedClasses.contains(enName)
+                FilterChip(selected = isSelected, onClick = { selectedClasses = if (isSelected) selectedClasses - enName else selectedClasses + enName }, label = { Text(cnName) })
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(onClick = { selectedClasses = setOf() }, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(12.dp)) { Text("清空重置") }
+            Button(onClick = { }, modifier = Modifier.weight(2f).height(50.dp), shape = RoundedCornerShape(12.dp), enabled = selectedClasses.isNotEmpty() && uiState.annotationImage != null) {
+                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("保存至数据集")
+            }
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
 @Composable
 fun NoDefectResultItem() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = "无缺陷",
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            
-            Text(
-                text = "✅ 未检测到缺陷",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            
-            Text(
-                text = "该图片经模型检测，未发现钢材表面缺陷",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f))) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "无缺陷", modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(text = "✅ 未检测到缺陷", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(text = "该图片经模型检测，未发现钢材表面缺陷", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f), textAlign = TextAlign.Center)
         }
     }
 }
 
-/**
- * 检测结果项
- */
 @Composable
 fun DetectionResultItem(result: DetectionResult) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = result.getChineseName(),
                     fontWeight = FontWeight.Bold,
@@ -605,8 +406,6 @@ fun DetectionResultItem(result: DetectionResult) {
                         else -> MaterialTheme.colorScheme.onSurface
                     }
                 )
-                
-                // 置信度标签
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = when {
@@ -628,32 +427,14 @@ fun DetectionResultItem(result: DetectionResult) {
                     )
                 }
             }
-            
             Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = "位置: (${result.x1.toInt()}, ${result.y1.toInt()}) - (${result.x2.toInt()}, ${result.y2.toInt()})",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                fontSize = 14.sp
-            )
-            
+            Text(text = "位置: (${result.x1.toInt()}, ${result.y1.toInt()}) - (${result.x2.toInt()}, ${result.y2.toInt()})", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
             Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = "严重程度: ${result.getSeverity()}",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                fontSize = 14.sp
-            )
-            
+            Text(text = "严重程度: ${result.getSeverity()}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
             if (result.description.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = result.description,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    fontSize = 14.sp
-                )
+                Text(text = result.description, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontSize = 14.sp)
             }
         }
     }
 }
-

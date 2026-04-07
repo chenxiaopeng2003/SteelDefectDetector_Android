@@ -144,7 +144,8 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     imageHeight = 0,
                     defectCount = defectCount,
                     inferenceTime = inferenceTime,
-                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms"
+                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms",
+                    results = results
                 )
                 
                 historyList.add(history)
@@ -192,7 +193,8 @@ class DetectionDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     imageHeight = 0,
                     defectCount = defectCount,
                     inferenceTime = inferenceTime,
-                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms\n\n详细结果:\n${results.joinToString("\n") { "- ${it.className}: ${it.confidence}%" }}"
+                    comparisonData = note ?: "检测时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(timestamp))}\n使用模型: $modelUsed\n缺陷数量: $defectCount\n推理耗时: ${inferenceTime}ms\n\n详细结果:\n${results.joinToString("\n") { "- ${it.className}: ${it.confidence}%" }}",
+                    results = results
                 )
             }
         }

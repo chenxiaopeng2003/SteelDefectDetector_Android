@@ -14,7 +14,9 @@ data class DetectionHistory(
     val imageHeight: Int,
     val defectCount: Int,
     val inferenceTime: Long,
-    val comparisonData: String
+    val comparisonData: String,
+    // 必须加上这个字段，用于传递解析好的缺陷坐标交给 UI 画框
+    val results: List<DetectionResult> = emptyList()
 ) {
     /**
      * 获取格式化时间
@@ -22,14 +24,14 @@ data class DetectionHistory(
     fun getFormattedTime(): String {
         return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(timestamp))
     }
-    
+
     /**
      * 获取简短标题
      */
     fun getShortTitle(): String {
         return "${getFormattedTime()} - ${modelName} (${defectCount}个缺陷)"
     }
-    
+
     /**
      * 获取详细信息
      */
