@@ -202,13 +202,31 @@ class MainViewModel : ViewModel() {
 
     private fun generateComparisonData(results: List<DetectionResult>, modelName: String, inferenceTime: Long, width: Int, height: Int): String {
         val sb = StringBuilder().append("--- 钢材缺陷检测报告 ---\n\n基本信息:\n• 使用模型: $modelName\n• 图像分辨率: $width × $height\n• 推理耗时: $inferenceTime ms\n• 缺陷总数: ${results.size} 个\n\n")
-        if (results.isEmpty()) sb.append("检测结果: 表面良好，未发现缺陷。\n") else {
+        
+        if (results.isEmpty()) {
+            sb.append("检测结果: 表面良好，未发现缺陷。\n")
+        } else {
             sb.append("缺陷类型统计:\n")
-            results.groupingBy { it.getChineseName() }.eachCount().forEach { (type, count) -> sb.append("• $type: $count 处\n") }
-            sb.append("\n详细缺陷位置:\n")
-            results.forEachIndexed { index, result -> sb.append("${index + 1}. [${result.getChineseName()}] 置信度: ${String.format("%.1f%%", result.confidence * 100)}\n") }
+            results.groupingBy { it.getChineseName() }.eachCount().forEach { (type, count) -> 
+                sb.append("• $type: $count 处\n") 
+            }
+            
+            sb.append("\n详细缺陷位置与评估:\n")
+            results.forEachIndexed { index, result ->
+                val boxWidth = (result.x2 - result.x1).toInt()
+                val boxHeight = (result.y2 - result.y1).toInt()
+                sb.append("${index + 1}. [${result.getChineseName()}] (${result.getSeverity()})\n")
+                sb.append(" - 置信度: ${String.format("%.1f%%", result.confidence * 100)}\n")
+                sb.append(" - 绝对坐标: P1(${result.x1.toInt()}, ${result.y1.toInt()}) -> P2(${result.x2.toInt()}, ${result.y2.toInt()})\n")
+                sb.append(" - 缺陷尺寸: $boxWidth × $boxHeight (像素)\n")
+                
+                if (result.description.isNotEmpty()) {
+                    sb.append(" - 评估: ${result.description}\n")
+                }
+                sb.append("\n")
+            }
         }
-        return sb.append("\n--- 报告结束 ---").toString()
+        return sb.append("--- 报告结束 ---").toString()
     }
 
     fun toggleComparisonData() { _uiState.update { it.copy(showComparison = !it.showComparison) } }

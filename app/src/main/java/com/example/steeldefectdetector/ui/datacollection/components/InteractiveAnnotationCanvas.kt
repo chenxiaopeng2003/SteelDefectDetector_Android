@@ -38,6 +38,12 @@ fun InteractiveAnnotationCanvas(
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
+    // 【新增】：防御状态残留，切换新图片时强制重置画布矩阵
+    LaunchedEffect(bitmap) {
+        scale = 1f
+        pan = Offset.Zero
+    }
+
     // 绘制状态 (记录的是基于原始图片像素的绝对坐标)
     var drawingStart by remember { mutableStateOf<Offset?>(null) }
     var drawingCurrent by remember { mutableStateOf<Offset?>(null) }
@@ -52,7 +58,7 @@ fun InteractiveAnnotationCanvas(
         modifier = modifier
             .fillMaxSize()
             // 模式 1：查看、缩放、平移
-            .pointerInput(mode) {
+            .pointerInput(mode, bitmap) {
                 if (mode == AnnotationMode.VIEW_PAN_ZOOM) {
                     detectTransformGestures { _, panChange, zoomChange, _ ->
                         scale = (scale * zoomChange).coerceIn(0.5f, 5f)
@@ -61,7 +67,7 @@ fun InteractiveAnnotationCanvas(
                 }
             }
             // 模式 2：绘制边界框
-            .pointerInput(mode) {
+            .pointerInput(mode, bitmap) {
                 if (mode == AnnotationMode.DRAW_BBOX) {
                     detectDragGestures(
                         onDragStart = { offset ->
