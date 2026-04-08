@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,11 +87,37 @@ fun MainScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         CenterAlignedTopAppBar(
-            title = { Text("钢材缺陷检测系统", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            title = { 
+                Text(
+                    "钢材缺陷检测系统", 
+                    fontWeight = FontWeight.SemiBold, 
+                    color = com.example.steeldefectdetector.ui.theme.OnSurface
+                ) 
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite,
+                scrolledContainerColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite,
+                titleContentColor = com.example.steeldefectdetector.ui.theme.OnSurface,
+                actionIconContentColor = com.example.steeldefectdetector.ui.theme.OnSurfaceVariant
+            ),
+            actions = {
+                IconButton(
+                    onClick = onNavigateToHistory,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    Icon(Icons.Default.History, contentDescription = "历史记录")
+                }
+                IconButton(onClick = onNavigateToExport) {
+                    Icon(Icons.Default.Download, contentDescription = "导出")
+                }
+            }
         )
 
-        TabRow(selectedTabIndex = pagerState.currentPage, containerColor = MaterialTheme.colorScheme.surface) {
+        TabRow(
+            selectedTabIndex = pagerState.currentPage, 
+            containerColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite,
+            contentColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue
+        ) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = pagerState.currentPage == index,
@@ -107,6 +136,7 @@ fun MainScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetectionView(
     viewModel: MainViewModel,
@@ -140,78 +170,189 @@ fun DetectionView(
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 模型选择下拉与历史记录
-        Row(modifier = Modifier.fillMaxWidth().height(56.dp).padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            var expanded by remember { mutableStateOf(false) }
-            var dropdownWidth by remember { mutableStateOf(0) }
-            val density = LocalDensity.current
-
-            Box(modifier = Modifier.weight(2f).fillMaxHeight().onSizeChanged { dropdownWidth = it.width }) {
-                OutlinedButton(onClick = { expanded = true }, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    Text(text = uiState.selectedModel ?: "选择模型", modifier = Modifier.weight(1f, fill = false), maxLines = 1)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.Menu, contentDescription = null, modifier = Modifier.size(20.dp))
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.width(with(density) { dropdownWidth.toDp() })) {
-                    uiState.availableModels.forEach { model ->
-                        DropdownMenuItem(text = { Text(model) }, onClick = { viewModel.onModelSelected(model); expanded = false })
+        // 模型选择器
+        var expanded by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            OutlinedTextField(
+                value = uiState.selectedModel ?: "选择模型",
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                    unfocusedBorderColor = com.example.steeldefectdetector.ui.theme.OutlineVariant,
+                    focusedLabelColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                    unfocusedLabelColor = com.example.steeldefectdetector.ui.theme.OnSurfaceVariant,
+                    focusedTextColor = com.example.steeldefectdetector.ui.theme.OnSurface,
+                    unfocusedTextColor = com.example.steeldefectdetector.ui.theme.OnSurface
+                ),
+                trailingIcon = {
+                    IconButton(onClick = { expanded = true }) {
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "选择模型", tint = com.example.steeldefectdetector.ui.theme.OnSurfaceVariant)
                     }
+                },
+                label = { Text("检测模型") }
+            )
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.9f)
+            ) {
+                uiState.availableModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model) },
+                        onClick = { 
+                            viewModel.onModelSelected(model)
+                            expanded = false 
+                        }
+                    )
                 }
-            }
-
-            OutlinedButton(onClick = onNavigateToHistory, modifier = Modifier.weight(1f).fillMaxHeight(), shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
-                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("历史")
             }
         }
 
-        // 检测结果图片区 (使用 selectedImage)
-        Card(modifier = Modifier.fillMaxWidth().height(300.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
+        // 图片显示区域
+        Card(
+            modifier = Modifier.fillMaxWidth().height(360.dp),
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 uiState.selectedImage?.let { bitmap ->
                     if (uiState.detectionResults.isNotEmpty()) {
                         BoundingBoxOverlay(bitmap = bitmap, detections = uiState.detectionResults, modifier = Modifier.fillMaxSize())
                     } else {
-                        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    
+                    // 已选择图片时：右下角悬浮相机按钮
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FloatingActionButton(
+                            onClick = { 
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                    photoUri?.let { cameraLauncher.launch(it) }
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp),
+                            containerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = "重新拍照")
+                        }
                     }
                 } ?: run {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    // 未选择图片时：大尺寸引导区域
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        // 拍照引导
+                        Card(
+                            onClick = { 
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                    photoUri?.let { cameraLauncher.launch(it) }
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = com.example.steeldefectdetector.ui.theme.PrimaryBlue
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "拍照",
+                                    color = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("请选择图片或拍照", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        
+                        // 相册引导
+                        Card(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = com.example.steeldefectdetector.ui.theme.PrimaryBlue
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "从相册选择",
+                                    color = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedButton(
-                onClick = { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) photoUri?.let { cameraLauncher.launch(it) } else permissionLauncher.launch(Manifest.permission.CAMERA) },
-                modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp), enabled = photoUri != null
-            ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("拍照")
-            }
-            OutlinedButton(
-                onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("选择图片")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = { viewModel.detectDefects() }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), enabled = uiState.selectedImage != null && !uiState.isDetecting
+            onClick = { viewModel.detectDefects() },
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                contentColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite,
+                disabledContainerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue.copy(alpha = 0.5f),
+                disabledContentColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite.copy(alpha = 0.5f)
+            ),
+            enabled = uiState.selectedImage != null && !uiState.isDetecting
         ) {
             if (uiState.isDetecting) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("检测中...")
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 3.dp
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text("检测中...", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             } else {
-                Text("开始检测")
+                Text("开始检测", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             }
         }
 
@@ -236,9 +377,17 @@ fun DetectionView(
 
         // 【确保结果区域能被稳定渲染】
         if (uiState.detectionResults.isNotEmpty() || uiState.comparisonData != null) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(), 
+                shape = RoundedCornerShape(16.dp), 
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), 
+                colors = CardDefaults.cardColors(
+                    containerColor = com.example.steeldefectdetector.ui.theme.CardBackground,
+                    contentColor = com.example.steeldefectdetector.ui.theme.OnSurface
+                )
+            ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("检测结果", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("检测结果", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = com.example.steeldefectdetector.ui.theme.OnSurface)
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (uiState.detectionResults.isNotEmpty()) {
@@ -262,7 +411,14 @@ fun DetectionView(
 
                     if (uiState.showComparison && uiState.comparisonData != null) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(), 
+                            shape = RoundedCornerShape(12.dp), 
+                            colors = CardDefaults.cardColors(
+                                containerColor = com.example.steeldefectdetector.ui.theme.SurfaceLight,
+                                contentColor = com.example.steeldefectdetector.ui.theme.OnSurface
+                            )
+                        ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Text("检测详情", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -331,7 +487,18 @@ fun DataCollectionView(
     }
     // ==========================================
 
-    val defectClasses = listOf("chongkong" to "冲孔", "hanfeng" to "焊缝", "yueyawan" to "月牙弯", "shuiban" to "水斑", "youban" to "油斑", "siban" to "丝斑", "yiwu" to "异物", "yahen" to "压痕", "zhehen" to "折痕", "yaozhe" to "腰折")
+    val defectClasses = listOf(
+        "chongkong" to "冲孔", 
+        "hanfeng" to "焊缝", 
+        "yueyawan" to "月牙弯", 
+        "shuiban" to "水斑", 
+        "youban" to "油斑", 
+        "siban" to "丝斑", 
+        "yiwu" to "异物", 
+        "yahen" to "压痕", 
+        "zhehen" to "折痕", 
+        "yaozhe" to "腰折"
+    )
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
         Spacer(modifier = Modifier.height(16.dp))
@@ -344,16 +511,16 @@ fun DataCollectionView(
                     onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) },
                     modifier = Modifier.padding(end = 8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) com.example.steeldefectdetector.ui.theme.PrimaryBlue else com.example.steeldefectdetector.ui.theme.SurfaceLight,
+                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) com.example.steeldefectdetector.ui.theme.SurfaceWhite else com.example.steeldefectdetector.ui.theme.OnSurfaceVariant
                     )
                 ) { Text("🔍 拖拽缩放") }
 
                 Button(
                     onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) com.example.steeldefectdetector.ui.theme.PrimaryBlue else com.example.steeldefectdetector.ui.theme.SurfaceLight,
+                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) com.example.steeldefectdetector.ui.theme.SurfaceWhite else com.example.steeldefectdetector.ui.theme.OnSurfaceVariant
                     )
                 ) { Text("✏️ 绘制框选") }
             }
@@ -361,10 +528,15 @@ fun DataCollectionView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 标签选择器 (移动到画板上方)
+        // 标签选择器 (横向滑动，节省纵向空间)
         Text("当前绘制标签类别 (单选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
-        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            defectClasses.forEachIndexed { index, (enName, cnName) ->
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items(defectClasses.size) { index ->
+                val (enName, cnName) = defectClasses[index]
                 val isSelected = selectedClassId == index
                 FilterChip(
                     selected = isSelected,
@@ -373,7 +545,13 @@ fun DataCollectionView(
                         selectedClassName = cnName
                     },
                     label = { Text(cnName) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer)
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = com.example.steeldefectdetector.ui.theme.PrimaryBlue,
+                        selectedLabelColor = com.example.steeldefectdetector.ui.theme.SurfaceWhite,
+                        containerColor = com.example.steeldefectdetector.ui.theme.SurfaceLight,
+                        labelColor = com.example.steeldefectdetector.ui.theme.OnSurfaceVariant
+                    ),
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
         }
@@ -381,7 +559,11 @@ fun DataCollectionView(
         Spacer(modifier = Modifier.height(12.dp))
 
         // 2. 核心画板区 (接入渲染引擎)
-        Card(modifier = Modifier.fillMaxWidth().height(400.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth().height(400.dp), 
+            shape = RoundedCornerShape(24.dp), 
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 uiState.annotationImage?.let { bitmap ->
                     com.example.steeldefectdetector.ui.datacollection.components.InteractiveAnnotationCanvas(
@@ -476,18 +658,51 @@ fun DataCollectionView(
 
 @Composable
 fun NoDefectResultItem() {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f))) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "无缺陷", modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-            Text(text = "✅ 未检测到缺陷", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Text(text = "该图片经模型检测，未发现钢材表面缺陷", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f), textAlign = TextAlign.Center)
+    Card(
+        modifier = Modifier.fillMaxWidth(), 
+        shape = RoundedCornerShape(8.dp), 
+        colors = CardDefaults.cardColors(
+            containerColor = com.example.steeldefectdetector.ui.theme.SuccessGreen.copy(alpha = 0.1f),
+            contentColor = com.example.steeldefectdetector.ui.theme.OnSurface
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp), 
+            horizontalAlignment = Alignment.CenterHorizontally, 
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle, 
+                contentDescription = "无缺陷", 
+                modifier = Modifier.size(48.dp), 
+                tint = com.example.steeldefectdetector.ui.theme.SuccessGreen
+            )
+            Text(
+                text = "✅ 未检测到缺陷", 
+                fontWeight = FontWeight.Bold, 
+                fontSize = 18.sp, 
+                color = com.example.steeldefectdetector.ui.theme.OnSurface
+            )
+            Text(
+                text = "该图片经模型检测，未发现钢材表面缺陷", 
+                fontSize = 14.sp, 
+                color = com.example.steeldefectdetector.ui.theme.OnSurfaceVariant, 
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
 
 @Composable
 fun DetectionResultItem(result: DetectionResult) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(), 
+        shape = RoundedCornerShape(8.dp), 
+        colors = CardDefaults.cardColors(
+            containerColor = com.example.steeldefectdetector.ui.theme.SurfaceLight,
+            contentColor = com.example.steeldefectdetector.ui.theme.OnSurface
+        )
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(

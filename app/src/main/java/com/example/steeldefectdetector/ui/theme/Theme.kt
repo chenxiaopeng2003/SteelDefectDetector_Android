@@ -1,21 +1,44 @@
 package com.example.steeldefectdetector.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = PrimaryBlueLight,
+    secondary = PrimaryBlue,
+    tertiary = PrimaryBlueDark,
+    background = SurfaceDark,
+    surface = SurfaceMedium,
+    onPrimary = SurfaceWhite,
+    onSecondary = SurfaceWhite,
+    onTertiary = SurfaceWhite,
+    onBackground = OnSurface,
+    onSurface = OnSurface,
+    surfaceVariant = SurfaceLight,
+    onSurfaceVariant = OnSurfaceVariant,
+    outline = OutlineVariant,
+    error = ErrorRed
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = PrimaryBlue,
+    secondary = PrimaryBlueDark,
+    tertiary = PrimaryBlueLight,
+    background = BackgroundLight,
+    surface = SurfaceWhite,
+    onPrimary = SurfaceWhite,
+    onSecondary = SurfaceWhite,
+    onTertiary = SurfaceWhite,
+    onBackground = OnSurface,
+    onSurface = OnSurface,
+    surfaceVariant = SurfaceLight,
+    onSurfaceVariant = OnSurfaceVariant,
+    outline = OutlineVariant,
+    error = ErrorRed
 )
 
 @Composable
