@@ -59,6 +59,7 @@ fun MainScreen(
         viewModel.messageEvent?.let { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             viewModel.clearMessage()
+
         }
     }
 
@@ -288,49 +289,87 @@ fun DetectionView(
 @Composable
 fun DataCollectionView(
     viewModel: MainViewModel,
-    context: android.content.Context
+    context: android.content.Context,
+    dataViewModel: com.example.steeldefectdetector.ui.datacollection.DataCollectionViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var selectedClasses by remember { mutableStateOf(setOf<String>()) }
 
-    // ====== 数据采集独立组件 ======
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    // 接入新版数据引擎状态
+    val currentMode by dataViewModel.currentMode.collectAsState()
+    val annotations by dataViewModel.annotations.collectAsState()
+    val isExporting by dataViewModel.isExporting.collectAsState()
+
+    // YOLO 要求单框单标签，已修复原有的多选逻辑
+    var selectedClassId by remember { mutableStateOf(0) }
+    var selectedClassName by remember { mutableStateOf("冲孔") }
+
+    // 监听导出结果并弹窗
+    LaunchedEffect(Unit) {
+        dataViewModel.exportEvent.collect { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ====== 保持原有的图片选择器逻辑不变 ======
+    val galleryLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
         uri?.let { viewModel.loadAnnotationImageFromUri(context, it) }
     }
     val photoFile = remember {
         try {
             val storageDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES)
-            File.createTempFile("ANNOTATE_${System.currentTimeMillis()}_", ".jpg", storageDir)
+            java.io.File.createTempFile("ANNOTATE_${System.currentTimeMillis()}_", ".jpg", storageDir)
         } catch (e: Exception) { null }
     }
     val photoUri = remember(photoFile) {
         photoFile?.let { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it) }
     }
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { success ->
         if (success && photoFile != null) viewModel.loadAnnotationImageFromFile(context, photoFile) else viewModel.showMessage("拍照失败")
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { isGranted ->
         if (isGranted) photoUri?.let { cameraLauncher.launch(it) } else viewModel.showMessage("需要相机权限")
     }
-    // ==============================
+    // ==========================================
 
     val defectClasses = listOf("chongkong" to "冲孔", "hanfeng" to "焊缝", "yueyawan" to "月牙弯", "shuiban" to "水斑", "youban" to "油斑", "siban" to "丝斑", "yiwu" to "异物", "yahen" to "压痕", "zhehen" to "折痕", "yaozhe" to "腰折")
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
         Spacer(modifier = Modifier.height(16.dp))
 
+        // 1. 顶部控制台 (引入双模态切换)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("人工标注模式", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            AssistChip(onClick = { }, label = { Text("待保存") }, leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer))
+            Row {
+                Button(
+                    onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) },
+                    enabled = currentMode != com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) { Text("🔍 拖拽缩放") }
+
+                Button(
+                    onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) },
+                    enabled = currentMode != com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    )
+                ) { Text("✏️ 绘制框选") }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 标注结果图片区 (使用 annotationImage)
-        Card(modifier = Modifier.fillMaxWidth().height(300.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
+        // 2. 核心画板区 (接入渲染引擎)
+        Card(modifier = Modifier.fillMaxWidth().height(400.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 uiState.annotationImage?.let { bitmap ->
-                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    com.example.steeldefectdetector.ui.datacollection.components.InteractiveAnnotationCanvas(
+                        bitmap = bitmap.asImageBitmap(),
+                        mode = currentMode,
+                        annotations = annotations,
+                        currentLabelId = selectedClassId,
+                        currentLabelName = selectedClassName,
+                        onAddAnnotation = { dataViewModel.addAnnotation(it) }
+                    )
                 } ?: run {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Crop, contentDescription = "Draw Box", modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
@@ -341,11 +380,21 @@ fun DataCollectionView(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        // 撤销按钮
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { dataViewModel.clearLastAnnotation() }, enabled = annotations.isNotEmpty()) {
+                Text("撤销上一个框")
+            }
+        }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 3. 图片获取按钮
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedButton(
-                onClick = { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) photoUri?.let { cameraLauncher.launch(it) } else permissionLauncher.launch(Manifest.permission.CAMERA) },
+                onClick = { if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) photoUri?.let { cameraLauncher.launch(it) } else permissionLauncher.launch(Manifest.permission.CAMERA) },
                 modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp), enabled = photoUri != null
             ) {
                 Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("拍照")
@@ -358,21 +407,52 @@ fun DataCollectionView(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Text("选择缺陷类别 (支持多选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+        Text("当前绘制标签类别 (单选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
 
+        // 4. 单选标签 FlowRow
         FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            defectClasses.forEach { (enName, cnName) ->
-                val isSelected = selectedClasses.contains(enName)
-                FilterChip(selected = isSelected, onClick = { selectedClasses = if (isSelected) selectedClasses - enName else selectedClasses + enName }, label = { Text(cnName) })
+            defectClasses.forEachIndexed { index, (enName, cnName) ->
+                val isSelected = selectedClassId == index
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { 
+                        selectedClassId = index
+                        selectedClassName = cnName
+                    },
+                    label = { Text(cnName) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer)
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // 5. 底部操作区 (接入导出引挚)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedButton(onClick = { selectedClasses = setOf() }, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(12.dp)) { Text("清空重置") }
-            Button(onClick = { }, modifier = Modifier.weight(2f).height(50.dp), shape = RoundedCornerShape(12.dp), enabled = selectedClasses.isNotEmpty() && uiState.annotationImage != null) {
-                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("保存至数据集")
+            OutlinedButton(
+                onClick = { dataViewModel.clearAllAnnotations() }, 
+                modifier = Modifier.weight(1f).height(50.dp), 
+                shape = RoundedCornerShape(12.dp),
+                enabled = annotations.isNotEmpty()
+            ) { Text("清空画板") }
+
+            Button(
+                onClick = { 
+                    uiState.annotationImage?.let { bitmap ->
+                        dataViewModel.saveToDataset(context, bitmap.asImageBitmap())
+                    }
+                }, 
+                modifier = Modifier.weight(2f).height(50.dp), 
+                shape = RoundedCornerShape(12.dp), 
+                enabled = !isExporting && annotations.isNotEmpty() && uiState.annotationImage != null
+            ) {
+                if (isExporting) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("保存至数据集 (${annotations.size})")
+                }
             }
         }
         Spacer(modifier = Modifier.height(32.dp))
