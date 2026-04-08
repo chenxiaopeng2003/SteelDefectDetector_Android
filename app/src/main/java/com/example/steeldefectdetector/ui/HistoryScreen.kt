@@ -29,9 +29,7 @@ import android.widget.Toast
 fun HistoryScreen(
     onBack: () -> Unit,
     onViewDetails: (DetectionHistory) -> Unit,
-    viewModel: MainViewModel = viewModel(
-        viewModelStoreOwner = LocalContext.current as? ComponentActivity ?: LocalViewModelStoreOwner.current!!
-    )
+    viewModel: MainViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current

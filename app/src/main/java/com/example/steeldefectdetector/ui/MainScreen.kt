@@ -342,21 +342,43 @@ fun DataCollectionView(
             Row {
                 Button(
                     onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) },
-                    enabled = currentMode != com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM,
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.VIEW_PAN_ZOOM) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) { Text("🔍 拖拽缩放") }
 
                 Button(
                     onClick = { dataViewModel.switchMode(com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) },
-                    enabled = currentMode != com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                        containerColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (currentMode == com.example.steeldefectdetector.model.annotation.AnnotationMode.DRAW_BBOX) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) { Text("✏️ 绘制框选") }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // 标签选择器 (移动到画板上方)
+        Text("当前绘制标签类别 (单选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            defectClasses.forEachIndexed { index, (enName, cnName) ->
+                val isSelected = selectedClassId == index
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { 
+                        selectedClassId = index
+                        selectedClassName = cnName
+                    },
+                    label = { Text(cnName) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // 2. 核心画板区 (接入渲染引擎)
         Card(modifier = Modifier.fillMaxWidth().height(400.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)) {
@@ -407,34 +429,27 @@ fun DataCollectionView(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Text("当前绘制标签类别 (单选)", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
 
-        // 4. 单选标签 FlowRow
-        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            defectClasses.forEachIndexed { index, (enName, cnName) ->
-                val isSelected = selectedClassId == index
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { 
-                        selectedClassId = index
-                        selectedClassName = cnName
-                    },
-                    label = { Text(cnName) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer)
-                )
-            }
-        }
+        // 5. 底部操作区 (接入导出引挚与路径查看)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = { 
+                    val path = context.getExternalFilesDir(null)?.absolutePath + "/yolo_dataset"
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("DatasetPath", path)
+                    clipboard.setPrimaryClip(clip)
+                    android.widget.Toast.makeText(context, "路径已复制: $path", android.widget.Toast.LENGTH_LONG).show()
+                }, 
+                modifier = Modifier.weight(1f).height(50.dp), 
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("📁 目录") }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // 5. 底部操作区 (接入导出引挚)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedButton(
                 onClick = { dataViewModel.clearAllAnnotations() }, 
                 modifier = Modifier.weight(1f).height(50.dp), 
                 shape = RoundedCornerShape(12.dp),
                 enabled = annotations.isNotEmpty()
-            ) { Text("清空画板") }
+            ) { Text("清空") }
 
             Button(
                 onClick = { 
@@ -442,7 +457,7 @@ fun DataCollectionView(
                         dataViewModel.saveToDataset(context, bitmap.asImageBitmap())
                     }
                 }, 
-                modifier = Modifier.weight(2f).height(50.dp), 
+                modifier = Modifier.weight(1.5f).height(50.dp), 
                 shape = RoundedCornerShape(12.dp), 
                 enabled = !isExporting && annotations.isNotEmpty() && uiState.annotationImage != null
             ) {
@@ -450,8 +465,8 @@ fun DataCollectionView(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                 } else {
                     Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("保存至数据集 (${annotations.size})")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("保存 (${annotations.size})")
                 }
             }
         }

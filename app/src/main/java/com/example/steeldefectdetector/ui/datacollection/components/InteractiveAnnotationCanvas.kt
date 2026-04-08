@@ -44,6 +44,10 @@ fun InteractiveAnnotationCanvas(
 
     val textMeasurer = rememberTextMeasurer()
 
+    // 防御 Compose 闭包陷阱：强制读取最新的标签 ID 与名称
+    val currentLabelIdState by rememberUpdatedState(currentLabelId)
+    val currentLabelNameState by rememberUpdatedState(currentLabelName)
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -133,8 +137,8 @@ fun InteractiveAnnotationCanvas(
                                 // 防御极小面积的误触绘制 (过滤长宽小于 5 像素的框)
                                 if ((right - left) > 5f && (bottom - top) > 5f) {
                                     val newBox = AnnotationBox(
-                                        labelId = currentLabelId,
-                                        labelName = currentLabelName,
+                                        labelId = currentLabelIdState,
+                                        labelName = currentLabelNameState,
                                         left = left,
                                         top = top,
                                         right = right,
